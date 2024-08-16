@@ -106,18 +106,19 @@ def getEdgeFeatures(list_rdkit_bonds):
         
     return np.array(edge_features, dtype = np.float32)
 
-def getInternalCoordinatesFromAllPaths(mol, adj, repeats = False): 
+def getInternalCoordinatesFromAllPaths(mol, adj, repeats = False):
     if isinstance(mol, rdkit.Chem.rdchem.Conformer):
         conformer = mol
     if isinstance(mol, rdkit.Chem.rdchem.Mol):
         conformer = mol.GetConformer()
+    # print(rdkit.Chem.MolToSmiles(mol))
         
-    graph = nx.from_numpy_matrix(adj, parallel_edges=False, create_using=None)
+    graph = nx.from_numpy_array(adj, parallel_edges=False, create_using=None)
     
     distance_paths, angle_paths, dihedral_paths = get_all_paths(graph, N = 1), get_all_paths(graph, N = 2), get_all_paths(graph, N = 3)
     
     if len(dihedral_paths) == 0:
-        raise Exception('No Dihedral Angle Detected')
+        raise Exception('No Dihedral Angle Detected', adj)
     
     bond_distance_indices = np.array(distance_paths, dtype = int)
     bond_angle_indices = np.array(angle_paths, dtype = int)
@@ -145,7 +146,7 @@ def embedConformerWithAllPaths(rdkit_mol3D, repeats = False):
     # Edge Index
     adj = rdkit.Chem.GetAdjacencyMatrix(mol)
     edge_index = adjacency_to_undirected_edge_index(adj)
-
+    # raise Exception(adj)
     # Edge Features
     bonds = []
     for b in range(int(edge_index.shape[1]/2)):

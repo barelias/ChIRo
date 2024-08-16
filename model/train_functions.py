@@ -7,7 +7,7 @@ from tqdm import tqdm
 import math
 from collections import OrderedDict
 
-from .optimization_functions import BCE_loss, tripletLoss, MSE
+from .optimization_functions import BCE_loss, CE_loss, tripletLoss, MSE
 
 from itertools import chain
 
@@ -131,7 +131,7 @@ def evaluate_binary_ranking_regression_loop_alpha(model, loader, device, batch_s
     return all_targets.detach().cpu().numpy(), all_outputs.detach().cpu().numpy()
 
 
-def classification_loop_alpha(model, loader, optimizers, device, epoch, batch_size, training = True, auxillary_torsion_loss = 0.02):
+def classification_loop_alpha(model, loader, optimizers, device, epoch, batch_size, training = True, auxillary_torsion_loss = 0.02, is_binary = True):
     if training:
         model.train()
     else:
@@ -141,7 +141,7 @@ def classification_loop_alpha(model, loader, optimizers, device, epoch, batch_si
     batch_aux_losses = []
     batch_sizes = []
     batch_accuracies = []
-    
+    print ('loader')    
     for batch in loader:
         batch_data, y = batch
         y = y.type(torch.float32)
@@ -161,10 +161,19 @@ def classification_loop_alpha(model, loader, optimizers, device, epoch, batch_si
         output, latent_vector, phase_shift_norm, z_alpha, mol_embedding, c_tensor, phase_cos, phase_sin, sin_cos_psi, sin_cos_alpha = model(batch_data, LS_map, alpha_indices)
         
         aux_loss = torch.mean(torch.abs(1.0 - phase_shift_norm.squeeze()))
-        loss = BCE_loss(y.squeeze(), output.squeeze())
+        if is_binary:
+            loss = BCE_loss(y.squeeze(), output.squeeze())
+        else:
+            # print (y, output)
+            loss = CE_loss(y, output)
+        
         backprop_loss = loss + aux_loss*auxillary_torsion_loss
         
-        acc = 1.0 - (torch.sum(torch.abs(y.squeeze().detach() - torch.round(torch.sigmoid(output.squeeze().detach())))) / y.shape[0])
+        if is_binary:
+            acc = 1.0 - (torch.sum(torch.abs(y.squeeze().detach() - torch.round(torch.sigmoid(output.squeeze().detach())))) / y.shape[0])
+        else:
+            pred = torch.argmax(output, dim=1)  # Obtém a classe prevista
+            acc = (pred == y).float().mean()  # Calcula a precisão
         
         if training:
             backprop_loss.backward()
@@ -181,12 +190,15 @@ def classification_loop_alpha(model, loader, optimizers, device, epoch, batch_si
     return batch_losses, batch_aux_losses, batch_sizes, batch_accuracies
 
 
-def evaluate_classification_loop_alpha(model, loader, device, batch_size, dataset_size):
+def evaluate_classification_loop_alpha(model, loader, device, batch_size, dataset_size, is_binary=True):
     model.eval()
     
     all_targets = torch.zeros(dataset_size).to(device)
-    all_outputs = torch.zeros(dataset_size).to(device)
-    
+    if is_binary:
+        all_outputs = torch.zeros(dataset_size).to(device)
+    else:
+        all_outputs = torch.zeros((dataset_size, 3), device=device)
+
     start = 0
     for batch in loader:
         batch_data, y = batch
@@ -203,10 +215,22 @@ def evaluate_classification_loop_alpha(model, loader, device, batch_size, datase
         with torch.no_grad():
             output, latent_vector, phase_shift_norm, z_alpha, mol_embedding, c_tensor, phase_cos, phase_sin, sin_cos_psi, sin_cos_alpha = model(batch_data, LS_map, alpha_indices)
             
-            all_targets[start:start + y.squeeze().shape[0]] = y.squeeze()
-            all_outputs[start:start + y.squeeze().shape[0]] = output.squeeze()
-            start += y.squeeze().shape[0]
-       
+            if is_binary:
+                all_targets[start:start + y.squeeze().shape[0]] = y.squeeze()
+                all_outputs[start:start + y.squeeze().shape[0]] = output.squeeze()
+                start += y.squeeze().shape[0]
+            else:
+                batch_size = y.shape[0]
+                num_classes = output.shape[1]  # Número de classes
+
+                # Se `all_targets` é 1D (para armazenar os índices das classes):
+                all_targets[start:start + batch_size] = y.view(-1)
+
+                # Se `all_outputs` é 2D (para armazenar os logits ou probabilidades):
+                all_outputs[start:start + batch_size, :] = output
+
+                start += batch_size
+
     return all_targets.detach().cpu().numpy(), all_outputs.detach().cpu().numpy()
 
 

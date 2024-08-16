@@ -102,7 +102,7 @@ def train_binary_ranking_regression_model(model, train_loader, val_loader, N_epo
     return best_state_dict
 
 
-def train_classification_model(model, train_loader, val_loader, N_epochs, optimizers, device, batch_size, auxillary_torsion_loss = 0.02, weighted_sum = False, save = True, PATH = ''):
+def train_classification_model(model, train_loader, val_loader, N_epochs, optimizers, device, batch_size, auxillary_torsion_loss = 0.02, weighted_sum = False, save = True, PATH = '', is_binary=True):
     
     train_epoch_losses = []
     train_epoch_aux_losses = []
@@ -117,7 +117,7 @@ def train_classification_model(model, train_loader, val_loader, N_epochs, optimi
     
     for epoch in tqdm(range(1, N_epochs+1)):
     
-        train_losses, train_aux_losses, train_batch_sizes, train_batch_accuracy = classification_loop_alpha(model, train_loader, optimizers, device, epoch, batch_size, training = True, auxillary_torsion_loss = auxillary_torsion_loss)
+        train_losses, train_aux_losses, train_batch_sizes, train_batch_accuracy = classification_loop_alpha(model, train_loader, optimizers, device, epoch, batch_size, training = True, auxillary_torsion_loss = auxillary_torsion_loss, is_binary=is_binary)
 
         if weighted_sum:
             epoch_loss = torch.sum(torch.tensor(train_losses) * torch.tensor(train_batch_sizes)) / (torch.sum(torch.tensor(train_batch_sizes))) #weighted mean based on the batch sizes
@@ -133,7 +133,7 @@ def train_classification_model(model, train_loader, val_loader, N_epochs, optimi
         train_epoch_accuracy.append(train_accuracy)
 
         with torch.no_grad():
-            val_losses, val_aux_losses, val_batch_sizes, val_batch_accuracy = classification_loop_alpha(model, val_loader, optimizers, device, epoch, batch_size, training = False, auxillary_torsion_loss = auxillary_torsion_loss)
+            val_losses, val_aux_losses, val_batch_sizes, val_batch_accuracy = classification_loop_alpha(model, val_loader, optimizers, device, epoch, batch_size, training = False, auxillary_torsion_loss = auxillary_torsion_loss, is_binary = is_binary)
         
             if weighted_sum:
                 val_epoch_loss = torch.sum(torch.tensor(val_losses) * torch.tensor(val_batch_sizes)) / (torch.sum(torch.tensor(val_batch_sizes))) #weighted mean based on the batch sizes

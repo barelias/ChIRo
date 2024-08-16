@@ -8,6 +8,10 @@ def BCE_loss(y, y_hat):
     BCE = torch.nn.BCEWithLogitsLoss()
     return BCE(y_hat, y)
 
+def CE_loss(y, y_hat):
+    CE = nn.CrossEntropyLoss()
+    return CE(y_hat, y.long()) 
+
 def MSE(y, y_hat):
     MSE = torch.mean(torch.square(y - y_hat))
     return MSE

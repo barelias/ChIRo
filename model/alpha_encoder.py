@@ -255,7 +255,7 @@ class InternalCoordinateEncoder(nn.Module):
 
 
 class Encoder(nn.Module):
-    def __init__(self, F_z_list, F_H, F_H_embed, F_E_embed, F_H_EConv, layers_dict, activation_dict, GAT_N_heads = 1, chiral_message_passing = False, CMP_EConv_MLP_hidden_sizes = [64], CMP_GAT_N_layers = 2, CMP_GAT_N_heads = 1, c_coefficient_normalization = None, encoder_reduction = 'mean', output_concatenation_mode = 'none', EConv_bias = True, GAT_bias = True, encoder_biases = True, dropout = 0.0):
+    def __init__(self, F_z_list, F_H, F_H_embed, F_E_embed, F_H_EConv, layers_dict, activation_dict, GAT_N_heads = 1, chiral_message_passing = False, CMP_EConv_MLP_hidden_sizes = [64], CMP_GAT_N_layers = 2, CMP_GAT_N_heads = 1, c_coefficient_normalization = None, encoder_reduction = 'mean', output_concatenation_mode = 'none', EConv_bias = True, GAT_bias = True, encoder_biases = True, dropout = 0.0, is_binary = True):
         super(Encoder, self).__init__()
 
         assert len(F_z_list) == 3
@@ -326,7 +326,7 @@ class Encoder(nn.Module):
         if output_concatenation_mode in ['both', 'molecule', 'conformer', 'z_alpha']:
             self.Output_MLP = MLP(
                 input_size = mlp_input_size,
-                output_size = 1, 
+                output_size = 1 if is_binary else 3, 
                 hidden_sizes = layers_dict['output_mlp_hidden_sizes'],
                 activation_hidden = activation_dict['output_mlp_hidden_activation'],
                 activation_out = activation_dict['output_mlp_output_activation'],

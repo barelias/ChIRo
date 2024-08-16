@@ -1,3 +1,9 @@
+from pathlib import Path
+import sys
+path_root = Path(__file__).parents[1]
+print(Path(__file__).parents[1])
+sys.path.append(str(path_root))
+
 import torch
 import torch.nn as nn
 import torch_geometric
@@ -193,6 +199,8 @@ elif params['iteration_mode'] == 'conformers':
                                         withoutReplacement = withoutReplacement, 
                                         stratified = stratified)
 
+print("loading dataset")
+
 train_dataset = MaskedGraphDataset(train_dataframe, 
                                     regression = 'RS_label_binary', # top_score, RS_label_binary, sign_rotation
                                     stereoMask = stereoMask,
@@ -204,6 +212,8 @@ val_dataset = MaskedGraphDataset(val_dataframe,
                                     stereoMask = stereoMask,
                                     mask_coordinates = params['mask_coordinates'], 
                                     )
+
+print("beginning training")
 
 num_workers = params['num_workers']
 train_loader = torch_geometric.data.DataLoader(train_dataset, batch_sampler = BatchSampler_train, num_workers = num_workers)
@@ -223,7 +233,7 @@ best_state_dict = train_classification_model(model,
                            train_loader, 
                            val_loader,
                            N_epochs = N_epochs, 
-                           optimizers = optimizers, 
+                           optimizers = optimizers,
                            device = device, 
                            batch_size = batch_size, 
                            auxillary_torsion_loss = auxillary_torsion_loss,
