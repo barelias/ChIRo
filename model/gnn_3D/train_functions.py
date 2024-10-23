@@ -8,6 +8,8 @@ import math
 from collections import OrderedDict
 from copy import deepcopy
 
+from model.optimization_functions import CE_loss
+
 from .optimization_functions import BCE_loss, tripletLoss, MSE
 
 from itertools import chain
@@ -123,7 +125,7 @@ def evaluate_binary_ranking_regression_loop(model, loader, device, batch_size, d
     return all_targets.detach().cpu().numpy(), all_outputs.detach().cpu().numpy()
 
 
-def classification_loop(model, loader, optimizer, device, epoch, batch_size, training = True):
+def classification_loop(model, loader, optimizer, device, epoch, batch_size, training=True, is_binary=True):
     if training:
         model.train()
     else:
@@ -135,17 +137,21 @@ def classification_loop(model, loader, optimizer, device, epoch, batch_size, tra
     
     for batch in loader:
         batch_data, y = batch
-        y = y.type(torch.float32)
+        y = y.to(device)
         
         batch_data = batch_data.to(device)
-        y = y.to(device)
         
         node_batch = batch_data.batch
         z = batch_data.x
         pos = batch_data.pos
-
         if training:
             optimizer.zero_grad()
+
+        if torch.isnan(z).any():
+            print("z contains NaN values")
+        
+        if torch.isnan(pos).any():
+            print("pos contains NaN values")        
         
         try:
             output, latent_vector = model(z.squeeze(), pos, node_batch)
@@ -153,37 +159,47 @@ def classification_loop(model, loader, optimizer, device, epoch, batch_size, tra
             print('failed to process batch due to error:', e)
             continue
         
-        loss = BCE_loss(y.squeeze(), output.squeeze())
-        backprop_loss = loss
+        if torch.isnan(output).any():
+            # print ('Output has NaN, ignoring')
+            continue
         
-        acc = 1.0 - (torch.sum(torch.abs(y.squeeze().detach() - torch.round(torch.sigmoid(output.squeeze().detach())))) / y.shape[0])
+        if is_binary:
+            loss = BCE_loss(y.squeeze(), output.squeeze())
+            acc = 1.0 - (torch.sum(torch.abs(y.squeeze().detach() - torch.round(torch.sigmoid(output.squeeze().detach())))) / y.shape[0])
+        else:
+            loss = CE_loss(y, output)
+            pred = torch.argmax(output, dim=1)
+            acc = (pred == y).float().mean()
         
         if training:
-            backprop_loss.backward()
+            loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=10, norm_type=2)
-            
             optimizer.step()
         
         batch_sizes.append(y.shape[0])
         batch_losses.append(loss.item())
-        batch_accuracies.append(acc.item())
-        
+        batch_accuracies.append(acc.item() if is_binary else acc)
+    
+    print (batch_losses, batch_sizes, batch_accuracies)
     return batch_losses, batch_sizes, batch_accuracies
 
-
-def evaluate_classification_loop(model, loader, device, batch_size, dataset_size):
+def evaluate_classification_loop(model, loader, device, batch_size, dataset_size, is_binary=True):
     model.eval()
     
     all_targets = torch.zeros(dataset_size).to(device)
-    all_outputs = torch.zeros(dataset_size).to(device)
+    
+    if is_binary:
+        all_outputs = torch.zeros(dataset_size).to(device)
+    else:
+        num_classes = 3  # Número de classes na última camada do modelo
+        all_outputs = torch.zeros((dataset_size, num_classes)).to(device)
     
     start = 0
     for batch in loader:
         batch_data, y = batch
-        y = y.type(torch.float32)
+        y = y.to(device)
         
         batch_data = batch_data.to(device)
-        y = y.to(device)
         
         node_batch = batch_data.batch
         z = batch_data.x
@@ -193,21 +209,29 @@ def evaluate_classification_loop(model, loader, device, batch_size, dataset_size
             try:
                 output, latent_vector = model(z.squeeze(), pos, node_batch)
                 
-                all_targets[start:start + y.squeeze().shape[0]] = y.squeeze()
-                all_outputs[start:start + y.squeeze().shape[0]] = output.squeeze()
-                start += y.squeeze().shape[0]
+                all_targets[start:start + y.shape[0]] = y.squeeze()
+                
+                if is_binary:
+                    all_outputs[start:start + y.shape[0]] = output.squeeze()
+                else:
+                    all_outputs[start:start + y.shape[0], :] = output  # Armazena logits ou probabilidades
+                
+                start += y.shape[0]
             
             except Exception as e:
-                print('failed to evaluate batch due to error:', e)
+                print('Failed to evaluate batch due to error:', e)
                 
-                all_targets[start:start + y.squeeze().shape[0]] = y.squeeze()
-                all_outputs[start:start + y.squeeze().shape[0]] = float('nan')
-                start += y.squeeze().shape[0]
-           
+                all_targets[start:start + y.shape[0]] = y.squeeze()
+                
+                if is_binary:
+                    all_outputs[start:start + y.shape[0]] = float('nan')
+                else:
+                    all_outputs[start:start + y.shape[0], :] = float('nan')
+                
+                start += y.shape[0]
                 continue
        
     return all_targets.detach().cpu().numpy(), all_outputs.detach().cpu().numpy()
-
 
 def contrastive_loop(model, loader, optimizer, device, epoch, loss_function, batch_size, margin, training = True):
     if training:

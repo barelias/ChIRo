@@ -60,6 +60,10 @@ val_dataframe = pd.read_pickle(params['validation_datafile'])
 train_dataframe = train_dataframe[train_dataframe['RSA_class'] != 2]
 val_dataframe = val_dataframe[val_dataframe['RSA_class'] != 2]
 
+print (train_dataframe[train_dataframe['RSA_class'] == 0].shape[0])
+print (train_dataframe[train_dataframe['RSA_class'] == 1].shape[0])
+print (train_dataframe[train_dataframe['RSA_class'] == 2].shape[0])
+
 train_dataframe = train_dataframe.reset_index(drop=True)
 val_dataframe = val_dataframe.reset_index(drop=True)
 

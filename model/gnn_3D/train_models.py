@@ -92,7 +92,7 @@ def train_binary_ranking_regression_model(model, train_loader, val_loader, N_epo
     return best_state_dict
 
 
-def train_classification_model(model, train_loader, val_loader, N_epochs, optimizer, device, batch_size, weighted_sum = False, save = True, PATH = ''):
+def train_classification_model(model, train_loader, val_loader, N_epochs, optimizer, device, batch_size, weighted_sum=False, save=True, PATH='', is_binary=True):
     
     train_epoch_losses = []
     train_epoch_accuracy = []
@@ -104,13 +104,15 @@ def train_classification_model(model, train_loader, val_loader, N_epochs, optimi
     best_epoch = 0
     best_state_dict = {}
     
-    for epoch in tqdm(range(1, N_epochs+1)):
+    for epoch in tqdm(range(1, N_epochs + 1)):
     
-        train_losses, train_batch_sizes, train_batch_accuracy = classification_loop(model, train_loader, optimizer, device, epoch, batch_size, training = True)
+        train_losses, train_batch_sizes, train_batch_accuracy = classification_loop(
+            model, train_loader, optimizer, device, epoch, batch_size, training=True, is_binary=is_binary
+        )
 
         if weighted_sum:
-            epoch_loss = torch.sum(torch.tensor(train_losses) * torch.tensor(train_batch_sizes)) / (torch.sum(torch.tensor(train_batch_sizes))) #weighted mean based on the batch sizes
-            train_accuracy = torch.sum(torch.tensor(train_batch_accuracy) * torch.tensor(train_batch_sizes)) / (torch.sum(torch.tensor(train_batch_sizes)))
+            epoch_loss = torch.sum(torch.tensor(train_losses) * torch.tensor(train_batch_sizes)) / torch.sum(torch.tensor(train_batch_sizes))
+            train_accuracy = torch.sum(torch.tensor(train_batch_accuracy) * torch.tensor(train_batch_sizes)) / torch.sum(torch.tensor(train_batch_sizes))
         else:
             epoch_loss = torch.mean(torch.tensor(train_losses))
             train_accuracy = torch.mean(torch.tensor(train_batch_accuracy))
@@ -119,11 +121,13 @@ def train_classification_model(model, train_loader, val_loader, N_epochs, optimi
         train_epoch_accuracy.append(train_accuracy)
 
         with torch.no_grad():
-            val_losses, val_batch_sizes, val_batch_accuracy = classification_loop(model, val_loader, optimizer, device, epoch, batch_size, training = False)
+            val_losses, val_batch_sizes, val_batch_accuracy = classification_loop(
+                model, val_loader, optimizer, device, epoch, batch_size, training=False, is_binary=is_binary
+            )
         
             if weighted_sum:
-                val_epoch_loss = torch.sum(torch.tensor(val_losses) * torch.tensor(val_batch_sizes)) / (torch.sum(torch.tensor(val_batch_sizes))) #weighted mean based on the batch sizes
-                val_accuracy = torch.sum(torch.tensor(val_batch_accuracy) * torch.tensor(val_batch_sizes)) / (torch.sum(torch.tensor(val_batch_sizes)))
+                val_epoch_loss = torch.sum(torch.tensor(val_losses) * torch.tensor(val_batch_sizes)) / torch.sum(torch.tensor(val_batch_sizes))
+                val_accuracy = torch.sum(torch.tensor(val_batch_accuracy) * torch.tensor(val_batch_sizes)) / torch.sum(torch.tensor(val_batch_sizes))
             else:
                 val_epoch_loss = torch.mean(torch.tensor(val_losses))
                 val_accuracy = torch.mean(torch.tensor(val_batch_accuracy))
@@ -135,16 +139,16 @@ def train_classification_model(model, train_loader, val_loader, N_epochs, optimi
                 best_val_accuracy = val_accuracy
                 best_epoch = epoch
                 best_state_dict = deepcopy(model.state_dict())
-                if save == True:
+                if save:
                     torch.save(model.state_dict(), PATH + 'best_model.pt')
-                    print('\n    saving best model:' + str(epoch))
-                    print('    Best Epoch:', epoch, 'Train Loss:', epoch_loss, 'Validation Loss:', val_epoch_loss, 'Validation Acc.', val_accuracy)
+                    print(f'\n    Saving best model at epoch: {epoch}')
+                    print(f'    Best Epoch: {epoch}, Train Loss: {epoch_loss}, Validation Loss: {val_epoch_loss}, Validation Acc: {val_accuracy}')
 
             if epoch % 1 == 0:
-                print('Epoch:', epoch, 'Train Loss:', epoch_loss, 'Validation Loss:', val_epoch_loss)
-                print('    Epoch:', epoch, 'Train Loss:', epoch_loss, 'Validation Loss:', val_epoch_loss, 'Validation Acc.', val_accuracy)
-                if (save == True) and (epoch % 5 == 0):
-                    torch.save(model.state_dict(), PATH + 'checkpoint_models/' + 'checkpoint_model_' + str(epoch) + '.pt')
+                print(f'Epoch: {epoch}, Train Loss: {epoch_loss}, Validation Loss: {val_epoch_loss}')
+                print(f'    Epoch: {epoch}, Train Loss: {epoch_loss}, Validation Loss: {val_epoch_loss}, Validation Acc: {val_accuracy}')
+                if save and epoch % 5 == 0:
+                    torch.save(model.state_dict(), PATH + f'checkpoint_models/checkpoint_model_{epoch}.pt')
                     torch.save(train_epoch_losses, PATH + 'train_epoch_losses.pt')
                     torch.save(val_epoch_losses, PATH + 'val_epoch_losses.pt')
     

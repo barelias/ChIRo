@@ -8,6 +8,7 @@ string_to_object = {
     "torch.nn.LeakyReLU()": torch.nn.LeakyReLU(),
     "torch.nn.Identity()": torch.nn.Identity(),
     "torch.nn.ReLU()": torch.nn.ReLU(),
+    "torch.nn.Softmax(dim=1)": torch.nn.Softmax(dim=1),
     "torch.nn.Sigmoid()": torch.nn.Sigmoid(),
     "torch.nn.Tanh()": torch.nn.Tanh()
 }

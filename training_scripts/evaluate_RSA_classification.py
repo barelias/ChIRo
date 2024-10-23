@@ -112,6 +112,7 @@ model = Encoder(
     GAT_bias = params['GAT_bias'], 
     encoder_biases = params['encoder_biases'], 
     dropout = params['dropout'], # applied to hidden layers (not input/output layer) of Encoder MLPs, hidden layers (not input/output layer) of EConv MLP, and all GAT layers (using their dropout parameter)
+    is_binary=False
     )
 
 # if params['pretrained'] != "":
@@ -252,12 +253,16 @@ model.to(device)
 
 # cross validation
 test_dataframe = pd.read_pickle(params['test_datafile'])
-test_dataframe = test_dataframe[test_dataframe["RSA_class"] == 2]
+# test_dataframe = test_dataframe[test_dataframe["RSA_class"] == 2]
 test_dataset = MaskedGraphDataset(test_dataframe, 
                                     regression = 'RSA_class', # top_score, RSA_class, sign_rotation
                                     stereoMask = params['stereoMask'],
                                     mask_coordinates = params['mask_coordinates'], 
                                     )
+
+print (test_dataframe[test_dataframe['RSA_class'] == 0].shape[0])
+print (test_dataframe[test_dataframe['RSA_class'] == 1].shape[0])
+print (test_dataframe[test_dataframe['RSA_class'] == 2].shape[0])
 
 test_loader = torch_geometric.loader.DataLoader(test_dataset, num_workers = num_workers, batch_size = 1000, shuffle = False)
 

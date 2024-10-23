@@ -112,6 +112,7 @@ model = Encoder(
     GAT_bias = params['GAT_bias'], 
     encoder_biases = params['encoder_biases'], 
     dropout = params['dropout'], # applied to hidden layers (not input/output layer) of Encoder MLPs, hidden layers (not input/output layer) of EConv MLP, and all GAT layers (using their dropout parameter)
+    is_binary=False
     )
 
 if params['pretrained'] != "":

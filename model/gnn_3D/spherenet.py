@@ -2,7 +2,7 @@ import torch
 from torch import nn
 from torch.nn import Linear, Embedding
 from torch_sparse import SparseTensor
-from torch_geometric.nn.acts import swish
+from torch_geometric.nn.resolver import swish
 from torch_geometric.nn.inits import glorot_orthogonal
 from torch_geometric.nn import radius_graph
 from torch_scatter import scatter
@@ -43,76 +43,108 @@ class MLP(torch.nn.Module):
                 out = self.activation_hidden(layer(out))
                 out = torch.nn.functional.dropout(out, p = self.dropout, training = self.training)
             out = self.activation_out(self.linear_layers[-1](out))
-
         return out
 
-def xyz_to_dat(pos, edge_index, num_nodes, use_torsion = False):
+def xyz_to_dat(pos: torch.Tensor, edge_index, num_nodes, use_torsion=False):
     """
-    Compute the diatance, angle, and torsion from geometric information.
+    Compute the distance, angle, and torsion from geometric information.
+    
     Args:
-        pos: Geometric information for every node in the graph.
-        edgee_index: Edge index of the graph.
-        number_nodes: Number of nodes in the graph.
-        use_torsion: If set to :obj:`True`, will return distance, angle and torsion, otherwise only return distance and angle (also retrun some useful index). (default: :obj:`False`)
+        pos: Geometric information for every node in the graph (positions).
+        edge_index: Edge index of the graph, indicating connections between nodes.
+        num_nodes: Number of nodes in the graph.
+        use_torsion: If True, will return distance, angle, and torsion; 
+                     otherwise, only return distance and angle, along with some useful indices. 
+                     (default: False)
     """
-    j, i = edge_index  # j->i
-
-    # Calculate distances. # number of edges
+    # Unpacking the edge indices into source (j) and target (i) nodes
+    j, i = edge_index  # j->i represents an edge from node j to node i
+    # print(type(j), j, i)
+    
+    # Calculate the Euclidean distance between connected nodes (i and j)
     dist = (pos[i] - pos[j]).pow(2).sum(dim=-1).sqrt()
 
+    # Create a sparse tensor that encodes the adjacency information with values as edge indices
     value = torch.arange(j.size(0), device=j.device)
     adj_t = SparseTensor(row=i, col=j, value=value, sparse_sizes=(num_nodes, num_nodes))
+    
+    # Retrieve rows corresponding to nodes j in the adjacency matrix (for triplet calculations)
     adj_t_row = adj_t[j]
+    
+    # Calculate the number of triplets (k->j->i) for each edge (j->i)
     num_triplets = adj_t_row.set_value(None).sum(dim=1).to(torch.long)
 
-    # Node indices (k->j->i) for triplets.
+    # Prepare node indices (k, j, i) for the triplets (k->j->i)
+    # print(f"i shape: {i.shape}")
+    # print(f"repeat: {num_triplets.shape}")
     idx_i = i.repeat_interleave(num_triplets)
     idx_j = j.repeat_interleave(num_triplets)
-    idx_k = adj_t_row.storage.col()
+    idx_k = adj_t_row.storage.col()  # Retrieve column indices representing node k
+    
+    # Create a mask to filter out invalid triplets where k == i
     mask = idx_i != idx_k
+    # print(idx_i.shape, idx_j.shape, idx_k.shape)
     idx_i, idx_j, idx_k = idx_i[mask], idx_j[mask], idx_k[mask]
 
-    # Edge indices (k-j, j->i) for triplets.
+    # Retrieve indices for edges (k->j and j->i) involved in each triplet
     idx_kj = adj_t_row.storage.value()[mask]
     idx_ji = adj_t_row.storage.row()[mask]
 
-    # Calculate angles. 0 to pi
+    # Calculate angles between connected nodes (angles are between 0 and pi)
     pos_ji = pos[idx_i] - pos[idx_j]
     pos_jk = pos[idx_k] - pos[idx_j]
-    a = (pos_ji * pos_jk).sum(dim=-1) # cos_angle * |pos_ji| * |pos_jk|
-    b = torch.cross(pos_ji, pos_jk).norm(dim=-1) # sin_angle * |pos_ji| * |pos_jk|
-    angle = torch.atan2(b, a)
-            
-    idx_batch = torch.arange(len(idx_i),device=device)
-    idx_k_n = adj_t[idx_j].storage.col()
-    repeat = num_triplets - 1
+    a = (pos_ji * pos_jk).sum(dim=-1)  # Dot product gives cos(angle) * |pos_ji| * |pos_jk|
+    b = torch.cross(pos_ji, pos_jk).norm(dim=-1)  # Cross product gives sin(angle) * |pos_ji| * |pos_jk|
+    angle = torch.atan2(b, a)  # atan2 returns the angle in radians
+    
+    # Prepare for torsion angle calculation if required
+    idx_batch = torch.arange(len(idx_i), device=pos.device)
+    idx_k_n = adj_t[idx_j].storage.col()  # Retrieve possible nodes n for torsion calculation
+    repeat = num_triplets - 1  # Adjust the number of repeats for each triplet
+
+    # print(f"num_triplets shape: {num_triplets.shape}")
+    # print(f"repeat: {repeat.shape}")
+    
+    # Repeat the triplet indices according to the number of possible torsions
     num_triplets_t = num_triplets.repeat_interleave(repeat)
+    # print(f"i shape: {idx_i.shape}")
+    # print(f"repeat: {num_triplets_t.shape}")
     idx_i_t = idx_i.repeat_interleave(num_triplets_t)
     idx_j_t = idx_j.repeat_interleave(num_triplets_t)
     idx_k_t = idx_k.repeat_interleave(num_triplets_t)
+    # print(f"idx_batch shape: {idx_batch.shape}")
     idx_batch_t = idx_batch.repeat_interleave(num_triplets_t)
-    mask = idx_i_t != idx_k_n       
+
+    # Mask out invalid torsions where the final node n equals the starting node i
+    mask = idx_i_t != idx_k_n
     idx_i_t, idx_j_t, idx_k_t, idx_k_n, idx_batch_t = idx_i_t[mask], idx_j_t[mask], idx_k_t[mask], idx_k_n[mask], idx_batch_t[mask]
 
-    # Calculate torsions.
+    # If torsion angles are requested, calculate them
     if use_torsion:
         pos_j0 = pos[idx_k_t] - pos[idx_j_t]
         pos_ji = pos[idx_i_t] - pos[idx_j_t]
         pos_jk = pos[idx_k_n] - pos[idx_j_t]
         dist_ji = pos_ji.pow(2).sum(dim=-1).sqrt()
+        
+        # Calculate the normals to the planes formed by the triplet of atoms
         plane1 = torch.cross(pos_ji, pos_j0)
         plane2 = torch.cross(pos_ji, pos_jk)
-        a = (plane1 * plane2).sum(dim=-1) # cos_angle * |plane1| * |plane2|
+        
+        # Torsion angle calculation using the dot product of the normals and the cross product of the planes
+        a = (plane1 * plane2).sum(dim=-1)  # cos(torsion_angle) * |plane1| * |plane2|
         b = (torch.cross(plane1, plane2) * pos_ji).sum(dim=-1) / dist_ji
-        torsion1 = torch.atan2(b, a) # -pi to pi
-        torsion1[torsion1<=0]+=2*PI # 0 to 2pi
-        torsion = scatter(torsion1,idx_batch_t,reduce='min')
+        torsion1 = torch.atan2(b, a)  # -pi to pi
+        
+        # Adjust torsion angles to the range 0 to 2*pi
+        torsion1[torsion1 <= 0] += 2 * torch.pi
+        torsion = scatter(torsion1, idx_batch_t, reduce='min')
 
+        # Return distances, angles, torsions, and relevant indices
         return dist, angle, torsion, i, j, idx_kj, idx_ji
     
     else:
+        # Return distances, angles, and relevant indices
         return dist, angle, i, j, idx_kj, idx_ji
-
 
 def Jn(r, n):
     return np.sqrt(np.pi / (2 * r)) * sp.jv(n + 0.5, r)
@@ -278,7 +310,10 @@ class dist_emb(torch.nn.Module):
         self.reset_parameters()
 
     def reset_parameters(self):
-        torch.arange(1, self.freq.numel() + 1, out=self.freq).mul_(PI)
+        self.freq = nn.Parameter(torch.arange(1, self.freq.numel() + 1).mul(PI), requires_grad=False)
+
+        # self.freq = torch.arange(1, self.freq.numel() + 1).mul(PI)
+        # torch.arange(1, self.freq.numel() + 1, out=self.freq).mul_(PI)
 
     def forward(self, dist):
         dist = dist.unsqueeze(-1) / self.cutoff
@@ -604,7 +639,7 @@ class SphereNet(torch.nn.Module):
         basis_emb_size_dist=8, basis_emb_size_angle=8, basis_emb_size_torsion=8, out_emb_channels=256,
         num_spherical=7, num_radial=6, envelope_exponent=5,
         num_before_skip=1, num_after_skip=2, num_output_layers=3,
-        act=swish, output_init='GlorotOrthogonal', use_node_features=True, MLP_hidden_sizes = []):
+        act=swish, output_init='GlorotOrthogonal', use_node_features=True, MLP_hidden_sizes = [], is_binary=True):
         super(SphereNet, self).__init__()
         
         self.MLP_hidden_sizes = MLP_hidden_sizes
@@ -626,7 +661,15 @@ class SphereNet(torch.nn.Module):
         self.update_us = torch.nn.ModuleList([update_u() for _ in range(num_layers)])
         
         if len(self.MLP_hidden_sizes) > 0:
-            self.Output_MLP = MLP(input_size = out_channels, output_size = 1, hidden_sizes = MLP_hidden_sizes, activation_hidden = torch.nn.LeakyReLU(negative_slope=0.01), activation_out = torch.nn.Identity(), biases = True, dropout = 0.0)
+            # print ('mlp hidden layers is bigger than 0')
+            self.Output_MLP = MLP(
+                input_size = out_channels,
+                output_size = 1 if is_binary else 3, 
+                hidden_sizes = MLP_hidden_sizes, 
+                activation_hidden = torch.nn.LeakyReLU(negative_slope=0.01), 
+                activation_out = torch.nn.Identity(), 
+                biases = True, 
+                dropout = 0.0)
         
         self.reset_parameters()
 
@@ -662,7 +705,11 @@ class SphereNet(torch.nn.Module):
         
         #if we are using a MLP for downstream target prediction
         if len(self.MLP_hidden_sizes) > 0:
+            # print ('mlp hidden layers is bigger than 0')
             target = self.Output_MLP(u)
+            # print(target)
             return target, u
-        
+        else:
+            print ('mlp hidden layers is not bigger than 0')
+            
         return u

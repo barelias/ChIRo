@@ -151,10 +151,10 @@ class Dataset_3D_GNN(torch_geometric.data.Dataset):
         data.pos = torch.as_tensor(pos, dtype = torch.float)
         return data
     
-    def __len__(self):
+    def len(self):
         return len(self.df)
     
-    def __getitem__(self, key):
+    def get(self, key):
         mol = deepcopy(self.df.iloc[key].rdkit_mol_cistrans_stereo)
         data = self.process_mol(mol)
         

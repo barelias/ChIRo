@@ -141,7 +141,6 @@ def classification_loop_alpha(model, loader, optimizers, device, epoch, batch_si
     batch_aux_losses = []
     batch_sizes = []
     batch_accuracies = []
-    print ('loader')    
     for batch in loader:
         batch_data, y = batch
         y = y.type(torch.float32)
@@ -161,11 +160,12 @@ def classification_loop_alpha(model, loader, optimizers, device, epoch, batch_si
         output, latent_vector, phase_shift_norm, z_alpha, mol_embedding, c_tensor, phase_cos, phase_sin, sin_cos_psi, sin_cos_alpha = model(batch_data, LS_map, alpha_indices)
         
         aux_loss = torch.mean(torch.abs(1.0 - phase_shift_norm.squeeze()))
+        # print (y, output)
         if is_binary:
             loss = BCE_loss(y.squeeze(), output.squeeze())
         else:
             # print (y, output)
-            loss = CE_loss(y, output)
+            loss = CE_loss(y.long(), output.squeeze())
         
         backprop_loss = loss + aux_loss*auxillary_torsion_loss
         
